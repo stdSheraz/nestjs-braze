@@ -1,5 +1,6 @@
 import { ModuleMetadata } from '@nestjs/common';
 import type { ConnectionOptions, JobsOptions } from 'bullmq';
+import { BrazeModuleOptions } from '../braze.interfaces';
 
 /**
  * Names of the BrazeService methods that can be queued for durable delivery.
@@ -62,5 +63,27 @@ export interface BrazeQueueModuleAsyncOptions
    * async factory because the module must decide whether to register the
    * worker provider synchronously, at bootstrap.
    */
+  runWorker?: boolean;
+}
+
+/**
+ * Options for the all-in-one variant that registers the base Braze client
+ * (BrazeService) AND the durable queue (BrazeQueueService) from a single call.
+ * Use when you want both from one module; do NOT also register BrazeModule
+ * separately.
+ */
+export interface BrazeQueueWithClientOptions
+  extends BrazeModuleOptions,
+    BrazeQueueModuleOptions {}
+
+export interface BrazeQueueWithClientAsyncOptions
+  extends Pick<ModuleMetadata, 'imports'> {
+  useFactory: (
+    ...args: any[]
+  ) =>
+    | Promise<Omit<BrazeQueueWithClientOptions, 'runWorker'>>
+    | Omit<BrazeQueueWithClientOptions, 'runWorker'>;
+  inject?: any[];
+  /** Run the delivery worker in this process. Default true. Synchronous — see above. */
   runWorker?: boolean;
 }
