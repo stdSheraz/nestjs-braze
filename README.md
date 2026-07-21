@@ -274,6 +274,10 @@ export class OrdersService {
 }
 ```
 
+**Queue name:** jobs are enqueued on a BullMQ queue named **`braze`** — that's the name
+you'll see in Redis and in dashboards like Bull Board. It's fixed (not configurable), so
+producer and worker always agree on it.
+
 **Defaults:** jobs retry 5× with exponential backoff; completed jobs are trimmed to the
 last 1000; failed jobs are kept in Redis for inspection / manual retry. Override globally
 via `defaultJobOptions`, or per call via the last argument.
@@ -283,6 +287,53 @@ enqueue, and run a dedicated worker process that imports `BrazeQueueModule` with
 default (`runWorker: true`) to drain the queue.
 
 > Static config works too: `BrazeQueueModule.forRoot({ connection: { host, port } })`.
+
+### One module for both (client + queue)
+
+The setup above uses two modules — `BrazeModule` for the client and `BrazeQueueModule`
+for the queue — which is the right choice when only some nodes need the worker, or when
+you want the client without Redis. If you'd rather configure everything in a single call,
+use `forRootWithClient` / `forRootWithClientAsync`. It registers the base client **and**
+the queue, so both `BrazeService` and `BrazeQueueService` become injectable — pick per
+call which delivery guarantee you want. **Don't also register `BrazeModule` separately.**
+
+```typescript
+// app.module.ts
+import { Module } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { BrazeQueueModule } from 'nestjs-braze/queue';
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true }),
+    BrazeQueueModule.forRootWithClientAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        endpoint: config.getOrThrow('BRAZE_REST_ENDPOINT'),
+        apiKey: config.getOrThrow('BRAZE_REST_API_KEY'),
+        connection: {
+          host: config.getOrThrow('REDIS_HOST'),
+          port: Number(config.get('REDIS_PORT') ?? 6379),
+          password: config.get('REDIS_PASSWORD'),
+        },
+      }),
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+```typescript
+@Injectable()
+export class UsersService {
+  constructor(
+    private readonly braze: BrazeService, // direct: await / fireAndForget
+    private readonly brazeQueue: BrazeQueueService, // durable: at-least-once
+  ) {}
+}
+```
+
+> Static equivalent: `BrazeQueueModule.forRootWithClient({ endpoint, apiKey, connection })`.
 
 ## API
 

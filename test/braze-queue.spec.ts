@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 import { DEFAULT_BRAZE_JOB_OPTIONS } from '../src/queue/braze-queue.constants';
+import { BrazeQueueModule } from '../src/queue/braze-queue.module';
 import { BrazeQueueProcessor } from '../src/queue/braze-queue.processor';
 import { BrazeQueueService } from '../src/queue/braze-queue.service';
 
@@ -99,5 +100,30 @@ describe('BrazeQueueProcessor (worker)', () => {
     await expect(
       processor.process({ data: { method: 'trackUser', args: [{}] } } as any),
     ).rejects.toThrow('boom');
+  });
+});
+
+describe('BrazeQueueModule.forRootWithClient (single-module setup)', () => {
+  it('registers both the client (BrazeModule) and the queue, exports BrazeQueueService', () => {
+    const mod = BrazeQueueModule.forRootWithClient({
+      endpoint: 'https://rest.iad-01.braze.com',
+      apiKey: 'k',
+      connection: { host: 'localhost', port: 6379 },
+    });
+
+    expect(mod.imports).toHaveLength(2); // BrazeModule + BullModule queue
+    expect(mod.exports).toContain(BrazeQueueService);
+    expect(mod.providers).toContain(BrazeQueueProcessor); // worker on by default
+  });
+
+  it('omits the worker provider when runWorker is false', () => {
+    const mod = BrazeQueueModule.forRootWithClient({
+      endpoint: 'https://rest.iad-01.braze.com',
+      apiKey: 'k',
+      connection: { host: 'localhost', port: 6379 },
+      runWorker: false,
+    });
+    expect(mod.providers).not.toContain(BrazeQueueProcessor);
+    expect(mod.providers).toContain(BrazeQueueService); // producer still there
   });
 });
