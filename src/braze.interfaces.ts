@@ -26,6 +26,24 @@ export interface BrazeServerResponse {
   errors?: unknown[];
 }
 
+/** Options accepted by every BrazeService method. */
+export interface BrazeCallOptions {
+  /**
+   * By default Braze errors are logged and swallowed so they never crash a
+   * business flow. Set true to rethrow the error to the caller instead.
+   * Ignored when `fireAndForget` is true — there is no caller awaiting it.
+   */
+  throwOnError?: boolean;
+  /**
+   * Fire-and-forget: kick the request off in the background and return
+   * immediately (resolving to null) without awaiting the HTTP round-trip.
+   * Errors are still logged but never thrown. Use for non-critical side
+   * effects (analytics events, attribute syncs) on a hot request path where
+   * you don't want to pay Braze's latency.
+   */
+  fireAndForget?: boolean;
+}
+
 /** Standard + custom attributes for a user profile. */
 export interface BrazeUserAttributes {
   external_id?: string;
