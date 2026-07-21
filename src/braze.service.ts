@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Braze } from 'braze-api';
 import { BRAZE_CLIENT, BRAZE_OPTIONS } from './braze.constants';
 import {
+  BrazeCallOptions,
   BrazeCampaignTrigger,
   BrazeCanvasTrigger,
   BrazeEvent,
@@ -47,13 +48,13 @@ export class BrazeService {
    */
   async trackUser(
     attributes: BrazeUserAttributes,
-    opts?: { throwOnError?: boolean },
+    opts?: BrazeCallOptions,
   ) {
     return this.track({ attributes: [attributes] }, opts);
   }
 
   /** Log a custom event. Equivalent of logCustomEvent on mobile. */
-  async logEvent(event: BrazeEvent, opts?: { throwOnError?: boolean }) {
+  async logEvent(event: BrazeEvent, opts?: BrazeCallOptions) {
     return this.track(
       { events: [{ time: new Date().toISOString(), ...event }] },
       opts,
@@ -63,7 +64,7 @@ export class BrazeService {
   /** Log a purchase. Equivalent of logPurchase on mobile. */
   async logPurchase(
     purchase: BrazePurchase,
-    opts?: { throwOnError?: boolean },
+    opts?: BrazeCallOptions,
   ) {
     return this.track(
       {
@@ -80,7 +81,7 @@ export class BrazeService {
    * Braze accepts up to 75 objects per request; this method chunks
    * automatically so callers never have to think about the limit.
    */
-  async track(payload: BrazeTrackPayload, opts?: { throwOnError?: boolean }) {
+  async track(payload: BrazeTrackPayload, opts?: BrazeCallOptions) {
     return this.execute(
       'users.track',
       async () => {
@@ -99,7 +100,7 @@ export class BrazeService {
   async identifyAlias(
     externalId: string,
     alias: { alias_name: string; alias_label: string },
-    opts?: { throwOnError?: boolean },
+    opts?: BrazeCallOptions,
   ): Promise<BrazeServerResponse | null> {
     return this.execute(
       'users.identify',
@@ -117,7 +118,7 @@ export class BrazeService {
   async createAlias(
     externalId: string,
     alias: { alias_name: string; alias_label: string },
-    opts?: { throwOnError?: boolean },
+    opts?: BrazeCallOptions,
   ): Promise<BrazeServerResponse | null> {
     return this.execute(
       'users.alias.new',
@@ -130,7 +131,7 @@ export class BrazeService {
   }
 
   /** GDPR-style delete of user profiles. */
-  async deleteUsers(externalIds: string[], opts?: { throwOnError?: boolean }) {
+  async deleteUsers(externalIds: string[], opts?: BrazeCallOptions) {
     return this.execute(
       'users.delete',
       () => this.braze.users.delete({ external_ids: externalIds } as any),
@@ -139,7 +140,7 @@ export class BrazeService {
   }
 
   /** Export full profile data for given users. */
-  async exportUsers(externalIds: string[], opts?: { throwOnError?: boolean }) {
+  async exportUsers(externalIds: string[], opts?: BrazeCallOptions) {
     return this.execute(
       'users.export.ids',
       () => this.braze.users.export.ids({ external_ids: externalIds } as any),
@@ -154,7 +155,7 @@ export class BrazeService {
   /** Fire an API-triggered campaign (transactional push/email/SMS). */
   async triggerCampaign(
     payload: BrazeCampaignTrigger,
-    opts?: { throwOnError?: boolean },
+    opts?: BrazeCallOptions,
   ) {
     return this.execute(
       'campaigns.trigger.send',
@@ -166,7 +167,7 @@ export class BrazeService {
   /** Fire an API-triggered Canvas. */
   async triggerCanvas(
     payload: BrazeCanvasTrigger,
-    opts?: { throwOnError?: boolean },
+    opts?: BrazeCallOptions,
   ) {
     return this.execute(
       'canvas.trigger.send',
@@ -187,7 +188,7 @@ export class BrazeService {
   async setEmailSubscription(
     externalId: string,
     state: 'opted_in' | 'subscribed' | 'unsubscribed',
-    opts?: { throwOnError?: boolean },
+    opts?: BrazeCallOptions,
   ) {
     return this.trackUser(
       { external_id: externalId, email_subscribe: state },
@@ -198,7 +199,7 @@ export class BrazeService {
   /** Send an immediate ad-hoc message (push/email/SMS) without a campaign. */
   async sendMessage(
     payload: Parameters<Braze['messages']['send']>[0],
-    opts?: { throwOnError?: boolean },
+    opts?: BrazeCallOptions,
   ) {
     return this.execute(
       'messages.send',
@@ -214,7 +215,7 @@ export class BrazeService {
       Parameters<Braze['transactional']['v1']['campaigns']['send']>[1],
       never
     >,
-    opts?: { throwOnError?: boolean },
+    opts?: BrazeCallOptions,
   ) {
     return this.execute(
       'transactional.send',
@@ -228,7 +229,7 @@ export class BrazeService {
     groupId: string,
     state: 'subscribed' | 'unsubscribed',
     externalIds: string[],
-    opts?: { throwOnError?: boolean },
+    opts?: BrazeCallOptions,
   ) {
     return this.execute(
       'subscription.status.set',
@@ -249,12 +250,31 @@ export class BrazeService {
   private async execute<T>(
     op: string,
     fn: () => Promise<T>,
-    opts?: { throwOnError?: boolean },
+    opts?: BrazeCallOptions,
   ): Promise<T | null> {
     if (!this.isEnabled) {
       this.logger.debug(`Braze disabled — skipping ${op}`);
       return null;
     }
+
+    if (opts?.fireAndForget) {
+      // Best-effort background send: kick it off and resolve immediately.
+      // run() logs-and-swallows (throwOnError is forced off), so the floating
+      // promise can never surface as an unhandledRejection. NOTE: in-memory
+      // only — a process crash/restart mid-flight drops the event. For
+      // guaranteed at-least-once delivery use BrazeQueueModule (nestjs-braze/queue).
+      void this.run(op, fn);
+      return null;
+    }
+
+    return this.run(op, fn, opts);
+  }
+
+  private async run<T>(
+    op: string,
+    fn: () => Promise<T>,
+    opts?: BrazeCallOptions,
+  ): Promise<T | null> {
     try {
       return await fn();
     } catch (error) {

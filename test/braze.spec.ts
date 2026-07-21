@@ -133,6 +133,35 @@ describe('BrazeService', () => {
     ).rejects.toThrow('boom');
   });
 
+  it('fireAndForget resolves to null immediately but still fires the request', async () => {
+    let resolveTrack!: (v: unknown) => void;
+    const track = jest.fn(
+      () => new Promise((resolve) => (resolveTrack = resolve)),
+    );
+    const { service } = await buildService({ track });
+
+    const result = await service.trackUser(
+      { external_id: 'u1' },
+      { fireAndForget: true },
+    );
+
+    expect(result).toBeNull(); // returned before the HTTP call resolved
+    expect(track).toHaveBeenCalledTimes(1); // but the request was kicked off
+    resolveTrack({ message: 'success' });
+  });
+
+  it('fireAndForget never throws, even with throwOnError set', async () => {
+    const { service } = await buildService({
+      track: jest.fn().mockRejectedValue(new Error('boom')),
+    });
+    await expect(
+      service.trackUser(
+        { external_id: 'u1' },
+        { fireAndForget: true, throwOnError: true },
+      ),
+    ).resolves.toBeNull();
+  });
+
   it('triggerCampaign forwards payload', async () => {
     const { service, client } = await buildService();
     await service.triggerCampaign({ campaign_id: 'c1', broadcast: true });
