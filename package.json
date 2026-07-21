@@ -17,6 +17,13 @@
     },
     "./package.json": "./package.json"
   },
+  "typesVersions": {
+    "*": {
+      "queue": [
+        "dist/queue/index.d.ts"
+      ]
+    }
+  },
   "files": [
     "dist",
     "README.md",
