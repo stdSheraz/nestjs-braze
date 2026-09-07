@@ -1,5 +1,6 @@
 import { ModuleMetadata } from '@nestjs/common';
 import type { ConnectionOptions, JobsOptions } from 'bullmq';
+import { BrazeErrorDetails } from '../braze.errors';
 import { BrazeModuleOptions } from '../braze.interfaces';
 
 /**
@@ -52,8 +53,12 @@ export interface BrazeJobLogEntry {
   request?: unknown;
   /** Body Braze returned (redacted). `response` stage only. */
   response?: unknown;
-  /** `error` stage only. */
-  error?: { message: string; name?: string; stack?: string };
+  /**
+   * `error` stage only. Carries Braze's HTTP `status` and its per-field
+   * `errors` array when the failure came from the API, so a sink sees which
+   * field Braze rejected rather than just the generic message.
+   */
+  error?: BrazeErrorDetails;
   /** Wall time of the Braze call in ms. `response` and `error` stages. */
   durationMs?: number;
 }

@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { Job } from 'bullmq';
+import { extractBrazeError } from '../braze.errors';
 import {
   BRAZE_QUEUE_OPTIONS,
   DEFAULT_BRAZE_JOB_LOG_MAX_BODY_LENGTH,
@@ -111,19 +112,32 @@ export class BrazeJobLogger {
     durationMs: number,
   ): Promise<void> {
     if (!this.enabled || this.config.errors === false) return;
-    const err = error instanceof Error ? error : undefined;
     const entry = this.entry('error', job);
     entry.durationMs = durationMs;
+
+    const details = extractBrazeError(error);
+    // Braze's `errors` array can echo payload fields, so redact it like a body.
     entry.error = {
-      message: err?.message ?? String(error),
-      name: err?.name,
-      stack: err?.stack,
+      ...details,
+      errors:
+        details.errors === undefined
+          ? undefined
+          : this.sanitize(details.errors),
     };
+
+    // status + errors are the part that names the rejected field; the generic
+    // message alone ("Valid data must be provided in ...") is undebuggable.
+    const status =
+      entry.error.status === undefined ? '' : ` status=${entry.error.status}`;
+    const brazeErrors =
+      entry.error.errors === undefined
+        ? ''
+        : ` errors=${this.body(entry.error.errors)}`;
 
     await this.emit(
       job,
       entry,
-      `✖ failed in ${durationMs}ms: ${entry.error.message} — request ${this.body(
+      `✖ failed in ${durationMs}ms:${status} ${entry.error.message}${brazeErrors} — request ${this.body(
         entry.request,
       )}`,
       true,

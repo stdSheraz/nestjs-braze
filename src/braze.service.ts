@@ -2,6 +2,10 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Braze } from 'braze-api';
 import { BRAZE_CLIENT, BRAZE_OPTIONS } from './braze.constants';
 import {
+  extractBrazeError,
+  formatBrazeErrorDetails,
+} from './braze.errors';
+import {
   BrazeCallOptions,
   BrazeCampaignTrigger,
   BrazeCanvasTrigger,
@@ -278,7 +282,13 @@ export class BrazeService {
     try {
       return await fn();
     } catch (error) {
-      this.logger.error(`Braze ${op} failed`, error as Error);
+      // Include Braze's status + per-field errors: its message for a rejected
+      // payload is generic, and the `errors` array is what names the bad field.
+      const details = extractBrazeError(error);
+      this.logger.error(
+        `Braze ${op} failed${formatBrazeErrorDetails(details)}`,
+        error as Error,
+      );
       if (opts?.throwOnError) throw error;
       return null;
     }

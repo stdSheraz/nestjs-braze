@@ -319,12 +319,18 @@ A job's log then reads:
 [2026-01-14T09:12:04.198Z] logPurchase attempt=1/5 ← response (ok in 137ms) [{"message":"success"}]
 ```
 
-...and a failing job keeps the request body next to the error, so a retry is debuggable on its own:
+...and a failing job keeps Braze's HTTP status, its **per-field error codes**, and the
+request body all on one line, so a retry is debuggable on its own:
 
 ```
-[2026-01-14T09:12:04.061Z] trackUser attempt=2/5 → request {"external_id":"u_1","plan":"premium"}
-[2026-01-14T09:12:04.402Z] trackUser attempt=2/5 ✖ failed in 341ms: Request failed with status code 503 — request {"external_id":"u_1","plan":"premium"}
+[2026-01-14T09:12:04.061Z] trackUser attempt=5/5 ✖ failed in 198ms: status=400 Valid data must be provided in the 'attributes', 'events', or 'purchases' fields. errors=[{"type":"EMAIL_BAD_FORMAT","input_array":"attributes","index":0}] — request {"external_id":"u_1","email":"","plan":"premium"}
 ```
+
+That `errors` array is the part worth having: Braze's *message* for a rejected payload is
+the generic "Valid data must be provided in ..." regardless of what it disliked, while
+`errors` names the actual field — here `EMAIL_BAD_FORMAT`, sitting right next to the
+`"email": ""` that caused it. Retrying can't fix a payload Braze considers invalid, so
+seeing the field immediately is the difference between a one-minute fix and a long guess.
 
 Pass an object instead of `true` to tune it:
 

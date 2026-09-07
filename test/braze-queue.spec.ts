@@ -233,6 +233,49 @@ describe('BrazeJobLogger (job.log request/response)', () => {
     expect(rows[1]).toContain('response (ok in 120ms) {"message":"success"}');
   });
 
+  it("surfaces Braze's status and per-field errors, not just the generic message", async () => {
+    const logger = new BrazeJobLogger({ connection: {} as any, logging: true });
+    const job = makeJob();
+
+    // Shape braze-api's ResponseError actually throws for a rejected payload.
+    const responseError: any = new Error(
+      "Valid data must be provided in the 'attributes', 'events', or 'purchases' fields.",
+    );
+    responseError.status = 400;
+    responseError.errors = [{ type: 'EMAIL_BAD_FORMAT', input_array: 'attributes', index: 0 }];
+
+    await logger.logError(job as any, responseError, 198);
+
+    const row: string = job.log.mock.calls[0][0];
+    expect(row).toContain('status=400');
+    expect(row).toContain('EMAIL_BAD_FORMAT'); // the bit that names the bad field
+  });
+
+  it('redacts secrets inside Braze error payloads too', async () => {
+    const sink = jest.fn();
+    const logger = new BrazeJobLogger({ connection: {} as any, logging: { sink } });
+    const err: any = new Error('bad request');
+    err.status = 400;
+    err.errors = [{ type: 'X', echoed: { api_key: 'shh' } }];
+
+    await logger.logError(makeJob() as any, err, 5);
+
+    const entry = sink.mock.calls[0][0];
+    expect(entry.error.status).toBe(400);
+    expect(entry.error.errors[0].echoed.api_key).toBe('[redacted]');
+  });
+
+  it('still works for a plain non-Braze error', async () => {
+    const logger = new BrazeJobLogger({ connection: {} as any, logging: true });
+    const job = makeJob();
+    await logger.logError(job as any, new Error('socket hang up'), 12);
+
+    const row: string = job.log.mock.calls[0][0];
+    expect(row).toContain('socket hang up');
+    expect(row).not.toContain('status=');
+    expect(row).not.toContain('errors=');
+  });
+
   it('logs the request payload alongside a failure so the job is self-contained', async () => {
     const logger = new BrazeJobLogger({ connection: {} as any, logging: true });
     const job = makeJob({ attemptsMade: 2 });
