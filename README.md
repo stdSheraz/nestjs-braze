@@ -11,6 +11,7 @@ Built on top of [`braze-api`](https://www.npmjs.com/package/braze-api).
 - 🛡️ **Never breaks your flow** — errors are logged and swallowed by default; opt into throwing with `{ throwOnError: true }`
 - ⏱️ **Three delivery modes** — `await` (wait for it), `{ fireAndForget: true }` (best-effort background), or a durable **BullMQ + Redis queue** for guaranteed at-least-once delivery
 - 🔇 **Disable switch** — `enabled: false` turns every call into a silent no-op (great for local dev)
+- 🔍 **Job request/response logging** — one `logging: true` and every queued job records what was sent to Braze and what came back, readable per job in Bull Board
 - 📦 **Auto-batching** — `track()` chunks payloads to Braze's 75-objects-per-request limit
 - 🧰 **Escape hatch** — `service.client` exposes the raw `braze-api` instance for anything not wrapped
 
@@ -292,6 +293,79 @@ enqueue, and run a dedicated worker process that imports `BrazeQueueModule` with
 default (`runWorker: true`) to drain the queue.
 
 > Static config works too: `BrazeQueueModule.forRoot({ connection: { host, port } })`.
+
+### Job logging — see the request & response in Bull Board
+
+Turn on `logging` once and every job the worker runs records the payload sent to Braze
+and the body Braze returned, written with BullMQ's `job.log()`. That means you read them
+**per job** in Bull Board / Bull Dashboard (the job's **Logs** tab) — including on failed
+jobs, which is where you actually want them. There's nothing to wire per call: enable it
+in the module config and it applies to every job automatically.
+
+```typescript
+BrazeQueueModule.forRootAsync({
+	inject: [ConfigService],
+	useFactory: (config: ConfigService) => ({
+		connection: { host: config.getOrThrow("REDIS_HOST"), port: 6379 },
+		logging: true, // ← that's it: all jobs now log request + response
+	}),
+});
+```
+
+A job's log then reads:
+
+```
+[2026-01-14T09:12:04.061Z] logPurchase attempt=1/5 → request {"external_id":"u_1","product_id":"sku_123","currency":"USD","price":99}
+[2026-01-14T09:12:04.198Z] logPurchase attempt=1/5 ← response (ok in 137ms) [{"message":"success"}]
+```
+
+...and a failing job keeps the request body next to the error, so a retry is debuggable on its own:
+
+```
+[2026-01-14T09:12:04.061Z] trackUser attempt=2/5 → request {"external_id":"u_1","plan":"premium"}
+[2026-01-14T09:12:04.402Z] trackUser attempt=2/5 ✖ failed in 341ms: Request failed with status code 503 — request {"external_id":"u_1","plan":"premium"}
+```
+
+Pass an object instead of `true` to tune it:
+
+```typescript
+logging: {
+	// flip it from an env var without removing the config
+	enabled: config.get("BRAZE_JOB_LOGGING") === "true",
+	// 'job' (default) = job.log(), for Bull Board | 'logger' = Nest stdout logger | 'both'
+	target: "both",
+	request: true,          // log the outgoing payload (default true)
+	response: true,         // log Braze's response body (default true)
+	errors: true,           // log failures (default true)
+	level: "debug",         // Nest logger level for the 'logger'/'both' targets
+	maxBodyLength: 4000,    // truncate long bodies (default 10000; 0 = no limit)
+	redact: ["api_key", "email", "phone"], // keys to mask in logged bodies
+}
+```
+
+**Redaction:** secret-ish keys (`api_key`, `authorization`, `password`, `token`, ...) are
+masked as `[redacted]` by default — see `DEFAULT_BRAZE_JOB_LOG_REDACT`. Braze payloads are
+mostly PII by nature, so if your dashboard or log sink shouldn't see it, add `email`,
+`phone` etc. to `redact` (it *replaces* the default list rather than extending it).
+Bodies are also truncated, and cycles/deep nesting are handled, so a bad payload can never
+wedge the worker. A `job.log()` write that fails (Redis blip) is swallowed — logging never
+fails a delivery.
+
+**Custom sink:** send structured entries to Datadog, Sentry, or your own table instead:
+
+```typescript
+logging: {
+	sink: (entry) => {
+		// entry: { stage: 'request' | 'response' | 'error', method, jobId, attempt,
+		//          maxAttempts, request, response?, error?, durationMs? }
+		datadog.log("braze.job", entry);
+	},
+}
+```
+
+> A `sink` replaces both built-in destinations — nothing goes to the job log or the Nest logger.
+> Logging is **off by default**, and only ever runs in processes that run the worker
+> (`runWorker !== false`).
 
 ### One module for both (client + queue)
 

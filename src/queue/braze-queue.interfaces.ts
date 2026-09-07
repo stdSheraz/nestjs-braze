@@ -30,6 +30,76 @@ export interface BrazeJobData {
   args: unknown[];
 }
 
+/** Which point in a job's life an entry describes. */
+export type BrazeJobLogStage = 'request' | 'response' | 'error';
+
+/** Structured form of one job log line — what a custom `sink` receives. */
+export interface BrazeJobLogEntry {
+  stage: BrazeJobLogStage;
+  /** BrazeService method the job dispatches to. */
+  method: string;
+  /** BullMQ job id. */
+  jobId?: string;
+  /** 1-based attempt number for this run. */
+  attempt: number;
+  /** Max attempts configured for the job, when known. */
+  maxAttempts?: number;
+  /**
+   * The request payload as enqueued (redacted). A single-argument call is
+   * unwrapped to the argument itself; multi-argument calls stay an array.
+   * Present on every stage, so a failure line is debuggable on its own.
+   */
+  request?: unknown;
+  /** Body Braze returned (redacted). `response` stage only. */
+  response?: unknown;
+  /** `error` stage only. */
+  error?: { message: string; name?: string; stack?: string };
+  /** Wall time of the Braze call in ms. `response` and `error` stages. */
+  durationMs?: number;
+}
+
+/**
+ * Request/response logging for queued jobs. Set once on the module and it
+ * applies to every job automatically — no per-call wiring.
+ */
+export interface BrazeJobLoggerOptions {
+  /**
+   * Defaults to true whenever this object is supplied, so passing any option
+   * turns logging on. Set false to keep the config but silence it (handy for
+   * flipping it from an env var).
+   */
+  enabled?: boolean;
+  /**
+   * Where the lines go. Default `'job'`.
+   * - `'job'` — BullMQ's `job.log()`: each job carries its own request/response
+   *   body, readable per job in Bull Board / Bull Dashboard ("Logs" tab).
+   * - `'logger'` — the Nest logger (stdout), job id included in each line.
+   * - `'both'` — both destinations.
+   */
+  target?: 'job' | 'logger' | 'both';
+  /** Log the outgoing payload before the call. Default true. */
+  request?: boolean;
+  /** Log the body Braze returned. Default true. */
+  response?: boolean;
+  /** Log failures (the error is rethrown either way, so BullMQ still retries). Default true. */
+  errors?: boolean;
+  /** Nest logger level, for the `'logger'`/`'both'` targets; failures always use `error`. Default 'log'. */
+  level?: 'log' | 'debug' | 'verbose' | 'warn';
+  /** Truncate serialised bodies past this many characters. Default 10000; 0 disables truncation. */
+  maxBodyLength?: number;
+  /**
+   * Keys to mask in logged bodies, matched ignoring case and `-`/`_`.
+   * Replaces DEFAULT_BRAZE_JOB_LOG_REDACT rather than extending it.
+   */
+  redact?: string[];
+  /**
+   * Send entries somewhere of your own (Datadog, Sentry, a request-log table).
+   * When set it replaces both built-in destinations — nothing is written to the
+   * job log or the Nest logger.
+   */
+  sink?: (entry: BrazeJobLogEntry) => void;
+}
+
 export interface BrazeQueueModuleOptions {
   /**
    * Redis connection for BullMQ. Accepts an ioredis connection object
@@ -47,6 +117,15 @@ export interface BrazeQueueModuleOptions {
    * Merged over DEFAULT_BRAZE_JOB_OPTIONS.
    */
   defaultJobOptions?: JobsOptions;
+  /**
+   * Log every job's request payload and Braze response into the job's own
+   * BullMQ log, so you can read them per job in Bull Board / Bull Dashboard.
+   * Off by default; `logging: true` enables it with sane defaults, or pass an
+   * object to tune destination, redaction, truncation, or a custom sink.
+   * Enabling it here is all that's needed — the worker applies it to every job
+   * it runs, with no per-call wiring.
+   */
+  logging?: boolean | BrazeJobLoggerOptions;
 }
 
 export interface BrazeQueueModuleAsyncOptions

@@ -8,6 +8,7 @@ import {
   BrazeQueueWithClientAsyncOptions,
   BrazeQueueWithClientOptions,
 } from './braze-queue.interfaces';
+import { BrazeJobLogger } from './braze-queue.logger';
 import { BrazeQueueProcessor } from './braze-queue.processor';
 import { BrazeQueueService } from './braze-queue.service';
 
@@ -135,10 +136,10 @@ export class BrazeQueueModule {
     };
   }
 
-  /** Producer always; worker only when runWorker !== false. */
+  /** Producer always; worker (and its job logger) only when runWorker !== false. */
   private static workerProviders(runWorker?: boolean): Provider[] {
     const providers: Provider[] = [BrazeQueueService];
-    if (runWorker !== false) providers.push(BrazeQueueProcessor);
+    if (runWorker !== false) providers.push(BrazeJobLogger, BrazeQueueProcessor);
     return providers;
   }
 }

@@ -18,3 +18,23 @@ export const DEFAULT_BRAZE_JOB_OPTIONS: JobsOptions = {
   removeOnComplete: 1000,
   removeOnFail: false,
 };
+
+/**
+ * Keys masked by default in logged request/response bodies. Matching ignores
+ * case and `-`/`_`, so `api_key`, `apiKey` and `API-KEY` are all covered.
+ * Braze payloads are mostly PII by nature — add `email`, `phone`, etc. via
+ * `logging.redact` if your log sink shouldn't see them.
+ */
+export const DEFAULT_BRAZE_JOB_LOG_REDACT = [
+  'apikey',
+  'authorization',
+  'password',
+  'secret',
+  'token',
+  'accesstoken',
+  'refreshtoken',
+  'credentials',
+];
+
+/** Logged bodies are truncated past this many characters. */
+export const DEFAULT_BRAZE_JOB_LOG_MAX_BODY_LENGTH = 10_000;
