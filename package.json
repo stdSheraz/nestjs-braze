@@ -1,6 +1,6 @@
 {
   "name": "nestjs-braze",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "NestJS module for the Braze REST API — inject a typed BrazeService anywhere to track users, log events, trigger campaigns, and manage subscriptions.",
   "author": "Muhammad Sheraz",
   "license": "MIT",
