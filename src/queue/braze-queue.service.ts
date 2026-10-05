@@ -5,6 +5,7 @@ import { BrazeService } from '../braze.service';
 import {
   BrazeCampaignTrigger,
   BrazeCanvasTrigger,
+  BrazeEcommerceOrder,
   BrazeEvent,
   BrazePurchase,
   BrazeTrackPayload,
@@ -75,8 +76,17 @@ export class BrazeQueueService {
     return this.enqueue('logEvent', [event], jobOpts);
   }
 
+  /**
+   * @deprecated Legacy purchase ingestion is disabled on newer Braze
+   * workspaces — use {@link logOrderPlaced}.
+   */
   logPurchase(purchase: BrazePurchase, jobOpts?: JobsOptions) {
     return this.enqueue('logPurchase', [purchase], jobOpts);
+  }
+
+  /** Durable `ecommerce.order_placed` — the supported way to record revenue. */
+  logOrderPlaced(order: BrazeEcommerceOrder, jobOpts?: JobsOptions) {
+    return this.enqueue('logOrderPlaced', [order], jobOpts);
   }
 
   track(payload: BrazeTrackPayload, jobOpts?: JobsOptions) {

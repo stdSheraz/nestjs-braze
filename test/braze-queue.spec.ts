@@ -30,6 +30,23 @@ describe('BrazeQueueService (producer)', () => {
     );
   });
 
+  it('enqueues logOrderPlaced so revenue goes through the durable path', async () => {
+    const { service, add } = build();
+    const order = {
+      external_id: 'u1',
+      order_id: 'trip_123',
+      total_value: 42.5,
+      currency: 'QAR',
+      source: 'backend',
+      products: [
+        { product_id: 'economy', product_name: 'Economy ride', variant_id: 'economy', quantity: 1, price: 42.5 },
+      ],
+    };
+    await service.logOrderPlaced(order);
+
+    expect(add.mock.calls[0][1]).toEqual({ method: 'logOrderPlaced', args: [order] });
+  });
+
   it('flattens multi-argument methods into the args array', async () => {
     const { service, add } = build();
     await service.setSubscriptionGroup('g1', 'subscribed', ['u1', 'u2']);

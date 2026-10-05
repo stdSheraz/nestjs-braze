@@ -181,3 +181,75 @@ describe('BrazeService', () => {
     });
   });
 });
+
+describe('logOrderPlaced (eCommerce recommended event)', () => {
+  function build() {
+    const track = jest.fn().mockResolvedValue({ message: 'success' });
+    const braze: any = { users: { track } };
+    const service = new BrazeService(
+      { endpoint: 'e', apiKey: 'k', enabled: true } as any,
+      braze,
+    );
+    return { service, track };
+  }
+
+  const order = {
+    external_id: 'u1',
+    order_id: 'trip_123',
+    total_value: 42.5,
+    currency: 'QAR',
+    source: 'backend',
+    products: [
+      {
+        product_id: 'economy',
+        product_name: 'Economy ride',
+        variant_id: 'economy',
+        quantity: 1,
+        price: 42.5,
+      },
+    ],
+  };
+
+  it('sends an event, never the disabled purchases array', async () => {
+    const { service, track } = build();
+    await service.logOrderPlaced(order);
+
+    const body = track.mock.calls[0][0];
+    expect(body.purchases).toBeUndefined(); // the whole point of the migration
+    expect(body.events).toHaveLength(1);
+    expect(body.events[0].name).toBe('ecommerce.order_placed');
+    expect(body.events[0].external_id).toBe('u1');
+  });
+
+  it('puts the order fields in properties and keeps routing fields out of them', async () => {
+    const { service, track } = build();
+    await service.logOrderPlaced(order);
+
+    const props = track.mock.calls[0][0].events[0].properties;
+    expect(props).toEqual({
+      order_id: 'trip_123',
+      total_value: 42.5,
+      currency: 'QAR',
+      source: 'backend',
+      products: order.products,
+    });
+    // external_id / time address the event, they aren't order properties
+    expect(props.external_id).toBeUndefined();
+    expect(props.time).toBeUndefined();
+  });
+
+  it('defaults time to now, and does not let an absent time blank it', async () => {
+    const { service, track } = build();
+    await service.logOrderPlaced({ ...order, time: undefined });
+
+    const time = track.mock.calls[0][0].events[0].time;
+    expect(typeof time).toBe('string');
+    expect(Number.isNaN(Date.parse(time))).toBe(false);
+  });
+
+  it('honours an explicit time', async () => {
+    const { service, track } = build();
+    await service.logOrderPlaced({ ...order, time: '2026-01-01T00:00:00.000Z' });
+    expect(track.mock.calls[0][0].events[0].time).toBe('2026-01-01T00:00:00.000Z');
+  });
+});

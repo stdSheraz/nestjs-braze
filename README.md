@@ -101,6 +101,56 @@ await braze.logPurchase({
 });
 ```
 
+### Purchases / revenue — use `logOrderPlaced`
+
+Braze moved legacy purchase ingestion (the `purchases` array on `/users/track`) into
+maintenance mode, and **workspaces created after that cutover have it disabled outright**.
+On those, anything sending a `purchases` array is rejected:
+
+```
+Legacy purchase ingestion is disabled. The 'purchases' array must not be provided.
+Use eCommerce recommended events instead.
+```
+
+Retrying never helps — Braze refuses it by policy, not by chance. Record revenue with
+`logOrderPlaced`, which sends an `ecommerce.order_placed` recommended event through the
+`events` array instead:
+
+```typescript
+await braze.logOrderPlaced({
+	external_id: riderId,
+	order_id: tripId, // unique per order; Braze deduplicates on it
+	total_value: 42.5,
+	currency: "QAR",
+	source: "backend",
+	products: [
+		{
+			product_id: "economy",
+			product_name: "Economy ride",
+			variant_id: "economy", // mirror product_id when you have no variants
+			quantity: 1,
+			price: 42.5,
+		},
+	],
+	metadata: { trip_id: tripId, car_type: "economy" }, // your own fields go here
+});
+```
+
+Braze validates recommended events against its schema and drops anything that doesn't
+match, so `order_id`, `total_value`, `currency`, `products`, `source` and each product's
+`product_name` / `variant_id` are all **required** — the types enforce that at compile
+time rather than letting you find out from a rejected job. Anything outside the schema
+belongs in `metadata`; extra top-level properties aren't part of the shape.
+
+The queue has the same method, so revenue keeps the at-least-once guarantee:
+
+```typescript
+await brazeQueue.logOrderPlaced({ ...order });
+```
+
+> `logPurchase` is kept for workspaces that still have legacy ingestion switched on, but
+> it's deprecated — prefer `logOrderPlaced` for anything new.
+
 ### Custom attribute operations
 
 ```typescript
@@ -426,7 +476,8 @@ export class UsersService {
 | --------------------------------- | ------------------------------------------- |
 | `trackUser(attrs)`                | `POST /users/track`                         |
 | `logEvent(event)`                 | `POST /users/track`                         |
-| `logPurchase(purchase)`           | `POST /users/track`                         |
+| `logPurchase(purchase)`           | `POST /users/track` (legacy, deprecated)    |
+| `logOrderPlaced(order)`           | `POST /users/track` (`ecommerce.order_placed`) |
 | `track(payload)`                  | `POST /users/track` (batched)               |
 | `identifyAlias(id, alias)`        | `POST /users/identify`                      |
 | `createAlias(id, alias)`          | `POST /users/alias/new`                     |

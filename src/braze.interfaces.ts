@@ -72,6 +72,12 @@ export interface BrazeEvent {
   properties?: Record<string, unknown>;
 }
 
+/**
+ * Legacy purchase object for the `purchases` array on /users/track.
+ *
+ * Braze has put this in maintenance mode and disabled it entirely for newer
+ * workspaces. Prefer {@link BrazeEcommerceOrder} + `logOrderPlaced`.
+ */
 export interface BrazePurchase {
   external_id?: string;
   user_alias?: { alias_name: string; alias_label: string };
@@ -81,6 +87,66 @@ export interface BrazePurchase {
   quantity?: number;
   time?: string; // ISO 8601 — defaults to now
   properties?: Record<string, unknown>;
+}
+
+/** Reserved event name for an order in Braze's eCommerce recommended events. */
+export const BRAZE_ORDER_PLACED_EVENT = 'ecommerce.order_placed';
+
+/**
+ * One line item on an order. Braze validates recommended events against its
+ * schema and rejects the event if a required field is missing, so
+ * `product_name` and `variant_id` are required here even when your catalogue
+ * has no variants — mirror `product_id` into `variant_id` in that case.
+ */
+export interface BrazeEcommerceProduct {
+  product_id: string;
+  product_name: string;
+  variant_id: string;
+  quantity: number;
+  price: number;
+  image_url?: string;
+  product_url?: string;
+  /** Free-form extras for this line item. */
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * An `ecommerce.order_placed` event — the supported way to record revenue.
+ *
+ * Braze put legacy purchase ingestion (the `purchases` array on /users/track)
+ * into maintenance mode, and workspaces created after the cutover have it
+ * disabled outright: such a request is rejected with "Legacy purchase
+ * ingestion is disabled. The 'purchases' array must not be provided." This is
+ * what to send instead.
+ *
+ * Anything outside Braze's schema belongs in `metadata` — extra top-level
+ * properties are not part of the recommended-event shape.
+ */
+export interface BrazeEcommerceOrder {
+  external_id?: string;
+  user_alias?: { alias_name: string; alias_label: string };
+  /** ISO 8601 — defaults to now. */
+  time?: string;
+
+  /** Unique per order; Braze uses it to deduplicate. Required. */
+  order_id: string;
+  /** Order total. Required. */
+  total_value: number;
+  /** ISO 4217, e.g. 'QAR'. Required. */
+  currency: string;
+  /** Line items. Required (send one synthetic item for a single-product sale). */
+  products: BrazeEcommerceProduct[];
+  /** Where the order came from, e.g. 'backend', 'web', 'ios'. Required. */
+  source: string;
+
+  cart_id?: string;
+  subtotal_value?: number;
+  tax?: number;
+  shipping?: number;
+  total_discounts?: number;
+  discounts?: Array<{ code?: string; amount?: number; type?: string }>;
+  /** Free-form extras — put your own segmentation fields here. */
+  metadata?: Record<string, unknown>;
 }
 
 export interface BrazeTrackPayload {

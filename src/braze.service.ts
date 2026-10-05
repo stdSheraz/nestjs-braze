@@ -6,9 +6,11 @@ import {
   formatBrazeErrorDetails,
 } from './braze.errors';
 import {
+  BRAZE_ORDER_PLACED_EVENT,
   BrazeCallOptions,
   BrazeCampaignTrigger,
   BrazeCanvasTrigger,
+  BrazeEcommerceOrder,
   BrazeEvent,
   BrazeModuleOptions,
   BrazePurchase,
@@ -59,13 +61,25 @@ export class BrazeService {
 
   /** Log a custom event. Equivalent of logCustomEvent on mobile. */
   async logEvent(event: BrazeEvent, opts?: BrazeCallOptions) {
+    // Destructure rather than spread over a default: `{ time: undefined }` from
+    // an optional caller field would otherwise overwrite the fallback with
+    // undefined and send an event with no timestamp.
+    const { time, ...rest } = event;
     return this.track(
-      { events: [{ time: new Date().toISOString(), ...event }] },
+      { events: [{ ...rest, time: time ?? new Date().toISOString() }] },
       opts,
     );
   }
 
-  /** Log a purchase. Equivalent of logPurchase on mobile. */
+  /**
+   * Log a purchase via the legacy `purchases` array.
+   *
+   * @deprecated Braze put legacy purchase ingestion into maintenance mode and
+   * disabled it for workspaces created after the cutover, which reject this
+   * with "Legacy purchase ingestion is disabled. The 'purchases' array must
+   * not be provided." Use {@link logOrderPlaced} instead. Retained for
+   * workspaces that still have it switched on.
+   */
   async logPurchase(
     purchase: BrazePurchase,
     opts?: BrazeCallOptions,
@@ -75,6 +89,31 @@ export class BrazeService {
         purchases: [
           { quantity: 1, time: new Date().toISOString(), ...purchase },
         ],
+      },
+      opts,
+    );
+  }
+
+  /**
+   * Record revenue as an `ecommerce.order_placed` recommended event — the
+   * supported replacement for {@link logPurchase} on modern Braze workspaces.
+   *
+   * It is an ordinary custom event under the hood, so it goes through
+   * /users/track's `events` array and never touches the disabled `purchases`
+   * array. Braze validates it against its schema, so every required field
+   * (`order_id`, `total_value`, `currency`, `products`, `source`, and each
+   * product's `product_name` / `variant_id`) must be present or the event is
+   * rejected — the types here enforce that at compile time.
+   */
+  async logOrderPlaced(order: BrazeEcommerceOrder, opts?: BrazeCallOptions) {
+    const { external_id, user_alias, time, ...properties } = order;
+    return this.logEvent(
+      {
+        external_id,
+        user_alias,
+        name: BRAZE_ORDER_PLACED_EVENT,
+        time,
+        properties,
       },
       opts,
     );

@@ -12,6 +12,7 @@ export type BrazeQueueableMethod =
   | 'trackUser'
   | 'logEvent'
   | 'logPurchase'
+  | 'logOrderPlaced'
   | 'track'
   | 'identifyAlias'
   | 'createAlias'
